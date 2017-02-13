@@ -1,6 +1,7 @@
 package interview.jelly;
 
 import interview.jelly.model.Board;
+import interview.jelly.model.JellyLevel;
 import interview.jelly.model.JellySession;
 import org.hibernate.HibernateException;
 import org.hibernate.Session;
@@ -29,6 +30,7 @@ public class JellyServer {
             factory = new Configuration()
                     .configure(new File("conf/hibernate.cfg.xml"))
                     .addAnnotatedClass(JellySession.class)
+                    .addAnnotatedClass(JellyLevel.class)
                     .buildSessionFactory();
         } catch (Throwable ex) {
             System.err.println("Failed to create SessionFactory object." + ex);
@@ -63,18 +65,35 @@ public class JellyServer {
             }
 
             if (httpMethod.equals("GET") && path.equals("/start-level")) {
-                Board board = new Board();
-                board.initialize();
-                System.out.println(board.toString());
+                Board board = null;
                 UUID id = UUID.randomUUID();
                 Session session = factory.openSession();
                 Transaction transaction = null;
                 try{
                     transaction = session.beginTransaction();
-                    JellySession jellySession = new JellySession();
-                    jellySession.setId(id.toString());
-                    jellySession.setBoard(board.toString());
-                    session.save(jellySession);
+                    JellyLevel jellyLevel = (JellyLevel) session.get(JellyLevel.class, Integer.parseInt(paramsMap.get("level")));
+                    if (jellyLevel == null) {
+                        // create random Board
+                        board = new Board();
+                        board.initialize();
+                        // create JellyLevel
+                        JellyLevel jl = new JellyLevel();
+                        jl.setLevel(Integer.parseInt(paramsMap.get("level")));
+                        jl.setBoard(board.toString());
+                        session.save(jl);
+                        // create JellySession
+                        JellySession jellySession = new JellySession();
+                        jellySession.setId(id.toString());
+                        jellySession.setBoard(board.toString());
+                        session.save(jellySession);
+                    } else {
+                        board = new Board(jellyLevel.getBoard());
+                        // create JellySession
+                        JellySession jellySession = new JellySession();
+                        jellySession.setId(id.toString());
+                        jellySession.setBoard(board.toString());
+                        session.save(jellySession);
+                    }
                     transaction.commit();
                 } catch (HibernateException e) {
                     if (transaction != null) transaction.rollback();
@@ -91,7 +110,6 @@ public class JellyServer {
                     transaction = session.beginTransaction();
                     JellySession jellySession = (JellySession) session.get(JellySession.class, paramsMap.get("sessionId"));
                     board = new Board(jellySession.getBoard());
-                    System.out.println(board.toString());
                     board.erase(
                             Integer.parseInt(paramsMap.get("row0")),
                             Integer.parseInt(paramsMap.get("col0")),
@@ -108,7 +126,6 @@ public class JellyServer {
                 } finally {
                     session.close();
                 }
-                System.out.println(board.toString());
                 sendResponse("200 OK", board.toString());
             } else {
                 sendResponse("404 Not Found", "INVALID PARAMS");
